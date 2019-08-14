@@ -4,67 +4,86 @@
       <canvas id="canvas" width="400" height="400"></canvas>
     </div>
     <div class="buttonContainer">
-      <button class="actionButton" type="button" onclick="onConnectClick()">Connect</button>
-      <button class="actionButton" type="button" onclick="onStartClick()">Start</button>
-      <button class="actionButton" type="button" onclick="onDisconnectClick()">Disconnect</button>
+      <v-btn class="actionButton" color="success" @click="onConnectClick()" v-bind:disabled="isConnected">Connect</v-btn>
+      <v-btn class="actionButton" color="success" @click="onStartClick()">Start</v-btn>
+      <v-btn class="actionButton" color="success" @click="onDisconnectClick()" v-bind:disabled="!isConnected">Disconnect</v-btn>
     </div>
   </div>
 </template>
 
 <script lang="ts">
-import { Vue, Component } from 'vue-property-decorator';
+import { Vue, Component } from "vue-property-decorator";
 import { Context } from "mocha";
+import { ServiceUUID, CharacteristicUUID } from "../common/uuids";
+
+/**
+ * Colors
+ */
+enum Colors {
+  Canvas = '#e6e6e6',
+  Line = '#555555'
+}
+
+/**
+ * Consts
+ */
+const Consts = {
+  LineWidth: 1,
+}
 
 @Component
 export default class Train extends Vue {
+
   private id: string = "";
   private points: Array<any> = [];
   private ctx!: CanvasRenderingContext2D;
-  private mouseX: number = 0;
-  private mouseY: number = 0;
+  private mouseX: number = Number.MAX_SAFE_INTEGER;
+  private mouseY: number = Number.MAX_SAFE_INTEGER;
+  private isConnected = false;
+  private cube: BluetoothDevice = null;
 
   mounted(): void {
-    //HTML上の canvas タグを取得
+    this.isConnected = false;
+    this.cube = null;
+
     let canvas = <HTMLCanvasElement>document.getElementById("canvas");
-    console.log("mounted!!!!");
 
     this.ctx = <CanvasRenderingContext2D>canvas.getContext("2d");
     this.ctx.beginPath();
-    this.ctx.fillStyle = "#f5f5f5";
+    this.ctx.fillStyle = Colors.Canvas;
     this.ctx.fillRect(0, 0, 410, 410);
 
-    this.mouseX = 0;
-    this.mouseY = 0;
+    this.mouseX = Number.MAX_SAFE_INTEGER;
+    this.mouseY = Number.MAX_SAFE_INTEGER;
 
-    canvas.addEventListener("mousemove", this.onMove, false);
-    canvas.addEventListener("mousedown", this.onClick, false);
+    canvas.addEventListener("mousemove", this.onMouseMove, false);
+    canvas.addEventListener("mousedown", this.onCanvasClick, false);
     canvas.addEventListener("mouseup", this.drawEnd, false);
     canvas.addEventListener("mouseout", this.drawEnd, false);
   }
 
-  onClick(e: any) {
+  onCanvasClick(e: any) {
     if (e.button === 0) {
       var rect = e.target.getBoundingClientRect();
-      var X = ~~(e.clientX - rect.left);
-      var Y = ~~(e.clientY - rect.top);
-      //draw 関数にマウスの位置を渡す
-      this.draw(X, Y);
+      var x = ~~(e.clientX - rect.left);
+      var y = ~~(e.clientY - rect.top);
+      this.draw(x, y);
     }
   }
 
-  onMove(e:any) {
+  onMouseMove(e: any) {
     if (e.buttons === 1 || e.witch === 1) {
       var rect = e.target.getBoundingClientRect();
-      var X = ~~(e.clientX - rect.left);
-      var Y = ~~(e.clientY - rect.top);
-      this.draw(X, Y);
+      var x = ~~(e.clientX - rect.left);
+      var y = ~~(e.clientY - rect.top);
+      this.draw(x, y);
     }
   }
 
   draw(x: number, y: number) {
     this.ctx.beginPath();
     this.ctx.globalAlpha = 1.0;
-    if (this.mouseX === null) {
+    if (this.mouseX === Number.MAX_SAFE_INTEGER) {
       this.points = [];
       this.ctx.moveTo(x, y);
     } else {
@@ -76,8 +95,8 @@ export default class Train extends Vue {
       y: y + 45
     });
     this.ctx.lineCap = "round";
-    this.ctx.lineWidth = 1;
-    this.ctx.strokeStyle = "#555555";
+    this.ctx.lineWidth = Consts.LineWidth;
+    this.ctx.strokeStyle = Colors.Line;
     this.ctx.stroke();
 
     this.mouseX = x;
@@ -85,8 +104,43 @@ export default class Train extends Vue {
   }
 
   drawEnd() {
-    this.mouseX = 0;
-    this.mouseY = 0;
+    this.mouseX = Number.MAX_SAFE_INTEGER;
+    this.mouseY = Number.MAX_SAFE_INTEGER;
+  }
+
+  onConnectClick() {
+    this.startScan();
+  }
+
+  onDisconnectClick() {
+    if (!this.cube) {
+      return;
+    }
+    this.cube.gatt.disconnect();
+    this.cube = null;
+    this.isConnected = false;
+  }
+
+  private async startScan() {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [
+        {
+          services: [ServiceUUID.PrimaryService.toLowerCase()]
+        }
+      ]
+    });
+    if (this.cube) {
+      return;
+    }
+    this.connect(device);
+  }
+
+  private async connect(device: BluetoothDevice) {
+    const server = await device.gatt.connect();
+    this.cube = device;
+    this.isConnected = true;
+    // cube = device;
+    // const service = await server.getPrimaryService(SERVICE_UUID);
   }
 }
 </script>
@@ -110,7 +164,6 @@ export default class Train extends Vue {
 
 .actionButton {
   margin-bottom: 30px;
-  width: 100px;
-  height: 50px;
+  padding: 4px;
 }
 </style>
