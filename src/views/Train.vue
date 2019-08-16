@@ -4,9 +4,20 @@
       <canvas id="canvas" width="400" height="400"></canvas>
     </div>
     <div class="buttonContainer">
-      <v-btn class="actionButton" color="success" @click="onConnectClick()" v-bind:disabled="isConnected">Connect</v-btn>
+      <v-btn
+        class="actionButton"
+        color="success"
+        @click="onConnectClick()"
+        v-bind:disabled="isConnected"
+      >Connect</v-btn>
       <v-btn class="actionButton" color="success" @click="onStartClick()">Start</v-btn>
-      <v-btn class="actionButton" color="success" @click="onDisconnectClick()" v-bind:disabled="!isConnected">Disconnect</v-btn>
+      <v-btn class="actionButton" color="success" @click="onClearClick()">Clear</v-btn>
+      <v-btn
+        class="actionButton"
+        color="success"
+        @click="onDisconnectClick()"
+        v-bind:disabled="!isConnected"
+      >Disconnect</v-btn>
     </div>
   </div>
 </template>
@@ -15,25 +26,25 @@
 import { Vue, Component } from "vue-property-decorator";
 import { Context } from "mocha";
 import { ServiceUUID, CharacteristicUUID } from "../common/uuids";
+import { IdInformation } from "../common/idInformation";
 
 /**
  * Colors
  */
 enum Colors {
-  Canvas = '#e6e6e6',
-  Line = '#555555'
+  Canvas = "#e6e6e6",
+  Line = "#555555"
 }
 
 /**
  * Consts
  */
 const Consts = {
-  LineWidth: 1,
-}
+  LineWidth: 1
+};
 
 @Component
 export default class Train extends Vue {
-
   private id: string = "";
   private points: Array<any> = [];
   private ctx!: CanvasRenderingContext2D;
@@ -41,6 +52,11 @@ export default class Train extends Vue {
   private mouseY: number = Number.MAX_SAFE_INTEGER;
   private isConnected = false;
   private cube: BluetoothDevice = null;
+  private motorControl: any = null;
+  private currentPosition!: IdInformation;
+  private startPosition!: IdInformation;
+  private nextPointIndex: number = 0;
+  private timerId: number = Number.MAX_SAFE_INTEGER;
 
   mounted(): void {
     this.isConnected = false;
@@ -80,6 +96,13 @@ export default class Train extends Vue {
     }
   }
 
+  private drawStartPoint(x: number, y: number) {
+    console.log(`drawStartPoint!! ${x} ${y}`);
+    this.ctx.beginPath();
+    this.ctx.fillStyle = "#555555";
+    this.ctx.fillRect(x - 45, y - 45, 10, 10);
+  }
+
   draw(x: number, y: number) {
     this.ctx.beginPath();
     this.ctx.globalAlpha = 1.0;
@@ -112,13 +135,136 @@ export default class Train extends Vue {
     this.startScan();
   }
 
+  onStartClick() {
+    console.log("onStartClick");
+    this.timerId = setInterval(() => {
+      this.nextPointIndex++;
+      this.nextPointIndex++;
+      this.nextPointIndex++;
+      if (this.nextPointIndex > this.points.length - 1) {
+        clearInterval(this.timerId);
+        this.stop();
+        return;
+      }
+      const nextPoint = this.points[this.nextPointIndex];
+      this.move(
+        ...this.chase(
+          nextPoint.x,
+          nextPoint.y,
+          this.currentPosition.positionX,
+          this.currentPosition.positionY,
+          this.currentPosition.angle
+        )
+      );
+    }, 50);
+  }
+
+  onClearClick() {
+    this.ctx.beginPath();
+    this.ctx.fillStyle = Colors.Canvas;
+    this.ctx.globalAlpha = 1.0;
+    this.ctx.fillRect(0, 0, 700, 400);
+  }
+
   onDisconnectClick() {
+    if (this.timerId !== Number.MAX_SAFE_INTEGER) {
+      clearInterval(this.timerId);
+    }
     if (!this.cube) {
       return;
     }
     this.cube.gatt.disconnect();
     this.cube = null;
     this.isConnected = false;
+  }
+
+  onChangeIdInformation(event: any) {
+    let characteristic = event.target;
+    this.currentPosition = new IdInformation(characteristic.value);
+    if (!this.startPosition) {
+      this.startPosition = this.currentPosition;
+      this.drawStartPoint(
+        this.startPosition.positionX,
+        this.startPosition.positionY
+      );
+    }
+  }
+
+  private stop() {
+    this.motorControl.writeValue(Uint8Array.from([2, 1, 1, 0, 2, 1, 0, 0]));
+  }
+
+  private move(left: number, right: number, durationMs: number) {
+    const data = this._motorMove(left, right, durationMs);
+    this.motorControl.writeValue(data.array);
+  }
+
+  private _motorMove(left: number, right: number, durationMs: number) {
+    const lSign = left > 0 ? 1 : -1;
+    const rSign = right > 0 ? 1 : -1;
+    const lDirection = left > 0 ? 1 : 2;
+    const rDirection = right > 0 ? 1 : 2;
+    const lPower = Math.min(Math.abs(left), 100);
+    const rPower = Math.min(Math.abs(right), 100);
+    const duration = this._clamp(durationMs / 10, 0, 255);
+    return {
+      array: Uint8Array.from([
+        2,
+        1,
+        lDirection,
+        lPower,
+        2,
+        rDirection,
+        rPower,
+        duration
+      ]),
+      data: {
+        left: lSign * lPower,
+        right: rSign * rPower,
+        durationMs: duration * 10
+      }
+    };
+  }
+
+  private _clamp(value: number, min: number, max: number) {
+    return Math.max(Math.min(value, max), min);
+  }
+
+  private _distance(targetX: number, targetY: number, x: number, y: number) {
+    const diffX = targetX - x;
+    const diffY = targetY - y;
+    const distance = Math.sqrt(diffX * diffX + diffY * diffY);
+  }
+
+  private chase(
+    nextX: number,
+    nextY: number,
+    cubeX: number,
+    cubeY: number,
+    cubeAngle: number
+  ) {
+    const diffX = nextX - cubeX;
+    const diffY = nextY - cubeY;
+    const distance = this._distance(nextX, nextY, cubeX, cubeY);
+    // if (distance < 50) {
+    //   return [0, 0]; // stop
+    // }
+
+    let relAngle = (Math.atan2(diffY, diffX) * 180) / Math.PI - cubeAngle;
+    relAngle = relAngle % 360;
+    if (relAngle < -180) {
+      relAngle += 360;
+    } else if (relAngle > 180) {
+      relAngle -= 360;
+    }
+
+    const ratio = 1 - Math.abs(relAngle) / 90;
+    let speed = 50;
+    if (relAngle > 0) {
+      return [speed, speed * ratio];
+    } else {
+      return [speed * ratio, speed];
+    }
   }
 
   private async startScan() {
@@ -132,15 +278,28 @@ export default class Train extends Vue {
     if (this.cube) {
       return;
     }
+    this.cube = device;
     this.connect(device);
   }
 
   private async connect(device: BluetoothDevice) {
     const server = await device.gatt.connect();
-    this.cube = device;
     this.isConnected = true;
-    // cube = device;
-    // const service = await server.getPrimaryService(SERVICE_UUID);
+    const service = await server.getPrimaryService(
+      ServiceUUID.PrimaryService.toLowerCase()
+    );
+    const idInformation = await service.getCharacteristic(
+      CharacteristicUUID.IdInformation.toLowerCase()
+    );
+    idInformation.addEventListener(
+      "characteristicvaluechanged",
+      this.onChangeIdInformation
+    );
+    idInformation.startNotifications();
+
+    this.motorControl = await service.getCharacteristic(
+      CharacteristicUUID.MortorControl.toLowerCase()
+    );
   }
 }
 </script>
