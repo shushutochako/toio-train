@@ -147,15 +147,8 @@ export default class Train extends Vue {
         return;
       }
       const nextPoint = this.points[this.nextPointIndex];
-      this.move(
-        ...this.chase(
-          nextPoint.x,
-          nextPoint.y,
-          this.currentPosition.positionX,
-          this.currentPosition.positionY,
-          this.currentPosition.angle
-        )
-      );
+      const chaseResult = this.chase(nextPoint.x,nextPoint.y,this.currentPosition.positionX,this.currentPosition.positionY,this.currentPosition.angle);
+      this.move(chaseResult[0], chaseResult[1]);
     }, 50);
   }
 
@@ -194,19 +187,18 @@ export default class Train extends Vue {
     this.motorControl.writeValue(Uint8Array.from([2, 1, 1, 0, 2, 1, 0, 0]));
   }
 
-  private move(left: number, right: number, durationMs: number) {
-    const data = this._motorMove(left, right, durationMs);
+  private move(left: number, right: number) {
+    const data = this._motorMove(left, right);
     this.motorControl.writeValue(data.array);
   }
 
-  private _motorMove(left: number, right: number, durationMs: number) {
+  private _motorMove(left: number, right: number) {
     const lSign = left > 0 ? 1 : -1;
     const rSign = right > 0 ? 1 : -1;
     const lDirection = left > 0 ? 1 : 2;
     const rDirection = right > 0 ? 1 : 2;
     const lPower = Math.min(Math.abs(left), 100);
     const rPower = Math.min(Math.abs(right), 100);
-    const duration = this._clamp(durationMs / 10, 0, 255);
     return {
       array: Uint8Array.from([
         2,
@@ -215,13 +207,11 @@ export default class Train extends Vue {
         lPower,
         2,
         rDirection,
-        rPower,
-        duration
+        rPower
       ]),
       data: {
         left: lSign * lPower,
-        right: rSign * rPower,
-        durationMs: duration * 10
+        right: rSign * rPower      
       }
     };
   }
@@ -246,9 +236,6 @@ export default class Train extends Vue {
     const diffX = nextX - cubeX;
     const diffY = nextY - cubeY;
     const distance = this._distance(nextX, nextY, cubeX, cubeY);
-    // if (distance < 50) {
-    //   return [0, 0]; // stop
-    // }
 
     let relAngle = (Math.atan2(diffY, diffX) * 180) / Math.PI - cubeAngle;
     relAngle = relAngle % 360;
@@ -305,6 +292,8 @@ export default class Train extends Vue {
 </script>
 <style scoped>
 .container {
+  padding: 0;
+  margin: 0;
   display: flex;
   flex-direction: row;
 }
