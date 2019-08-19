@@ -57,6 +57,7 @@ export default class Train extends Vue {
   private startPosition!: IdInformation;
   private nextPointIndex: number = 0;
   private timerId: number = Number.MAX_SAFE_INTEGER;
+  private stopTimerId: number = Number.MAX_SAFE_INTEGER;
 
   mounted(): void {
     this.isConnected = false;
@@ -129,6 +130,29 @@ export default class Train extends Vue {
   drawEnd() {
     this.mouseX = Number.MAX_SAFE_INTEGER;
     this.mouseY = Number.MAX_SAFE_INTEGER;
+    // adjust points
+    let latestPoint: any = {};
+    const newPoints = this.points.filter((elm, i) => {
+      if (i === 0) {
+        latestPoint = elm;
+        return true;
+      } else if (i === this.points.length - 1) {
+        return true;
+      } else {
+        const distance = this._distance(
+          elm.x,
+          elm.y,
+          latestPoint.x,
+          latestPoint.y
+        );
+        if (distance >= 5) {
+          latestPoint = elm;
+          return true;
+        }
+        return false;
+      }
+    });
+    this.points = newPoints;
   }
 
   onConnectClick() {
@@ -137,17 +161,36 @@ export default class Train extends Vue {
 
   onStartClick() {
     console.log("onStartClick");
+
+    this.stopTimerId = setInterval(() => {
+      if (this.nextPointIndex >= this.points.length - 1) {
+        const lastPoint = this.points[this.points.length - 1];
+        const distance = this._distance(
+          lastPoint.x,
+          lastPoint.y,
+          this.currentPosition.positionX,
+          this.currentPosition.positionY
+        );
+        if (distance <= 25) {
+          clearInterval(this.timerId);
+          clearInterval(this.stopTimerId);
+          this.stop();
+        }
+      }
+    }, 15);
+
     this.timerId = setInterval(() => {
-      this.nextPointIndex++;
-      this.nextPointIndex++;
-      this.nextPointIndex++;
-      if (this.nextPointIndex > this.points.length - 1) {
-        clearInterval(this.timerId);
-        this.stop();
-        return;
+      if (this.nextPointIndex < this.points.length - 1) {
+        this.nextPointIndex++;
       }
       const nextPoint = this.points[this.nextPointIndex];
-      const chaseResult = this.chase(nextPoint.x,nextPoint.y,this.currentPosition.positionX,this.currentPosition.positionY,this.currentPosition.angle);
+      const chaseResult = this.chase(
+        nextPoint.x,
+        nextPoint.y,
+        this.currentPosition.positionX,
+        this.currentPosition.positionY,
+        this.currentPosition.angle
+      );
       this.move(chaseResult[0], chaseResult[1]);
     }, 50);
   }
@@ -184,7 +227,8 @@ export default class Train extends Vue {
   }
 
   private stop() {
-    this.motorControl.writeValue(Uint8Array.from([2, 1, 1, 0, 2, 1, 0, 0]));
+    console.log("stop");
+    this.motorControl.writeValue(Uint8Array.from([1, 1, 1, 0, 2, 1, 0]));
   }
 
   private move(left: number, right: number) {
@@ -200,18 +244,10 @@ export default class Train extends Vue {
     const lPower = Math.min(Math.abs(left), 100);
     const rPower = Math.min(Math.abs(right), 100);
     return {
-      array: Uint8Array.from([
-        2,
-        1,
-        lDirection,
-        lPower,
-        2,
-        rDirection,
-        rPower
-      ]),
+      array: Uint8Array.from([1, 1, lDirection, lPower, 2, rDirection, rPower]),
       data: {
         left: lSign * lPower,
-        right: rSign * rPower      
+        right: rSign * rPower
       }
     };
   }
@@ -220,10 +256,15 @@ export default class Train extends Vue {
     return Math.max(Math.min(value, max), min);
   }
 
-  private _distance(targetX: number, targetY: number, x: number, y: number) {
+  private _distance(
+    targetX: number,
+    targetY: number,
+    x: number,
+    y: number
+  ): number {
     const diffX = targetX - x;
     const diffY = targetY - y;
-    const distance = Math.sqrt(diffX * diffX + diffY * diffY);
+    return Math.sqrt(diffX * diffX + diffY * diffY);
   }
 
   private chase(
