@@ -33,7 +33,8 @@ import { IdInformation } from "../common/idInformation";
  */
 enum Colors {
   Canvas = "#e6e6e6",
-  Line = "#555555"
+  Line = "#555555",
+  StartPoint = "#00B0FF"
 }
 
 /**
@@ -98,10 +99,10 @@ export default class Train extends Vue {
   }
 
   private drawStartPoint(x: number, y: number) {
-    console.log(`drawStartPoint!! ${x} ${y}`);
     this.ctx.beginPath();
-    this.ctx.fillStyle = "#555555";
-    this.ctx.fillRect(x - 45, y - 45, 10, 10);
+    this.ctx.fillStyle = Colors.StartPoint;
+    this.ctx.arc( x - 45, y - 45, 10, 0 * Math.PI / 180, 360 * Math.PI / 180, false ) ;
+    this.ctx.fill() ;
   }
 
   draw(x: number, y: number) {
@@ -161,7 +162,6 @@ export default class Train extends Vue {
 
   onStartClick() {
     console.log("onStartClick");
-
     this.stopTimerId = setInterval(() => {
       if (this.nextPointIndex >= this.points.length - 1) {
         const lastPoint = this.points[this.points.length - 1];
@@ -175,6 +175,10 @@ export default class Train extends Vue {
           clearInterval(this.timerId);
           clearInterval(this.stopTimerId);
           this.stop();
+          this.points = [];
+          this.nextPointIndex = 0;
+          this.clearCanvas(true);
+          this.startPosition = null;
         }
       }
     }, 15);
@@ -196,10 +200,7 @@ export default class Train extends Vue {
   }
 
   onClearClick() {
-    this.ctx.beginPath();
-    this.ctx.fillStyle = Colors.Canvas;
-    this.ctx.globalAlpha = 1.0;
-    this.ctx.fillRect(0, 0, 700, 400);
+    this.clearCanvas(false);
   }
 
   onDisconnectClick() {
@@ -212,6 +213,11 @@ export default class Train extends Vue {
     this.cube.gatt.disconnect();
     this.cube = null;
     this.isConnected = false;
+    this.startPosition = null;
+    this.points = [];
+    this.nextPointIndex = 0;
+    this.clearCanvas(true);
+    this.startPosition = null;
   }
 
   onChangeIdInformation(event: any) {
@@ -234,6 +240,16 @@ export default class Train extends Vue {
   private move(left: number, right: number) {
     const data = this._motorMove(left, right);
     this.motorControl.writeValue(data.array);
+  }
+
+  private clearCanvas(isAllClear: boolean) {
+    this.ctx.beginPath();
+    this.ctx.fillStyle = Colors.Canvas;
+    this.ctx.globalAlpha = 1.0;
+    this.ctx.fillRect(0, 0, 700, 400);
+    if (!isAllClear && this.startPosition) {
+      this.drawStartPoint(this.startPosition.positionX, this.startPosition.positionY);
+    }
   }
 
   private _motorMove(left: number, right: number) {
