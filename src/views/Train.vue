@@ -44,6 +44,45 @@ const Consts = {
   LineWidth: 1
 };
 
+/**
+ * Melody
+ */
+const Melody = {
+  HARU: [
+    3,
+    1,
+    28,
+    2285,127,255,
+    285,79,255,
+    285,84,255,
+    285,88,255,
+    285,79,255,
+    285,83,255,
+    285,86,255,
+    285,77,255,
+    285,81,255,
+    285,84,255,
+    285,81,255,
+    285,83,255,
+    285,79,255,
+    285,79,255,
+    285,84,255,
+    285,88,255,
+    285,79,255,
+    285,83,255,
+    285,86,255,
+    285,76,255,
+    285,81,255,
+    285,84,255,
+    285,81,255,
+    285,83,255,
+    285,86,255,
+    57,72,255,
+    57,76,255,
+    114,79,255
+  ]
+}
+
 @Component
 export default class Train extends Vue {
   private id: string = "";
@@ -54,6 +93,7 @@ export default class Train extends Vue {
   private isConnected = false;
   private cube: BluetoothDevice = null;
   private motorControl: any = null;
+  private soundControl: any = null;
   private currentPosition!: IdInformation;
   private startPosition!: IdInformation;
   private nextPointIndex: number = 0;
@@ -162,6 +202,44 @@ export default class Train extends Vue {
 
   onStartClick() {
     console.log("onStartClick");
+    this.start();
+  }
+
+  onClearClick() {
+    this.clearCanvas(false);
+  }
+
+  onDisconnectClick() {
+    if (this.timerId !== Number.MAX_SAFE_INTEGER) {
+      clearInterval(this.timerId);
+    }
+    if (!this.cube) {
+      return;
+    }
+    this.cube.gatt.disconnect();
+    this.cube = null;
+    this.isConnected = false;
+    this.startPosition = null;
+    this.points = [];
+    this.nextPointIndex = 0;
+    this.clearCanvas(true);
+    this.startPosition = null;
+  }
+
+  onChangeIdInformation(event: any) {
+    let characteristic = event.target;
+    this.currentPosition = new IdInformation(characteristic.value);
+    if (!this.startPosition) {
+      this.startPosition = this.currentPosition;
+      this.drawStartPoint(
+        this.startPosition.positionX,
+        this.startPosition.positionY
+      );
+    }
+  }
+  
+  private async start() {
+    await this.playMelody();
     this.stopTimerId = setInterval(() => {
       if (this.nextPointIndex >= this.points.length - 1) {
         const lastPoint = this.points[this.points.length - 1];
@@ -199,37 +277,13 @@ export default class Train extends Vue {
     }, 50);
   }
 
-  onClearClick() {
-    this.clearCanvas(false);
-  }
-
-  onDisconnectClick() {
-    if (this.timerId !== Number.MAX_SAFE_INTEGER) {
-      clearInterval(this.timerId);
-    }
-    if (!this.cube) {
-      return;
-    }
-    this.cube.gatt.disconnect();
-    this.cube = null;
-    this.isConnected = false;
-    this.startPosition = null;
-    this.points = [];
-    this.nextPointIndex = 0;
-    this.clearCanvas(true);
-    this.startPosition = null;
-  }
-
-  onChangeIdInformation(event: any) {
-    let characteristic = event.target;
-    this.currentPosition = new IdInformation(characteristic.value);
-    if (!this.startPosition) {
-      this.startPosition = this.currentPosition;
-      this.drawStartPoint(
-        this.startPosition.positionX,
-        this.startPosition.positionY
-      );
-    }
+  private playMelody() {
+    return new Promise((resolve, reject) => {
+      this.soundControl.writeValue(Uint8Array.from(Melody.HARU));
+      setTimeout(() => {
+        resolve();
+      }, 12000);
+    });
   }
 
   private stop() {
@@ -343,6 +397,9 @@ export default class Train extends Vue {
 
     this.motorControl = await service.getCharacteristic(
       CharacteristicUUID.MortorControl.toLowerCase()
+    );
+    this.soundControl = await service.getCharacteristic(
+      CharacteristicUUID.SoundControl.toLowerCase()
     );
   }
 }
